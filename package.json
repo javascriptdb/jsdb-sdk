@@ -1,0 +1,13 @@
+{
+  "name": "@javascriptdb/sdk",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {},
+  "author": "jpcapdevila",
+  "license": "ISC",
+  "dependencies": {
+    "events": "^3.3.0",
+    "lodash-es": "^4.17.21"
+  }
+}
