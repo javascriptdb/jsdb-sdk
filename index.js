@@ -292,8 +292,7 @@ export class DatabaseArray extends Array {
     const result = await jsdbAxios.post('/db/filter', {
       collection: this.collection,
       callbackFn: callbackFn
-        .toString()
-        .replaceAll('auth.userId', JSON.stringify(auth.userId)),
+        .toString(),
       thisArg
     });
     return result.data;
@@ -303,8 +302,7 @@ export class DatabaseArray extends Array {
     const result = await jsdbAxios.post('/db/find', {
       collection: this.collection,
       callbackFn: callbackFn
-        .toString()
-        .replaceAll('auth.userId', JSON.stringify(auth.userId)),
+        .toString(),
       thisArg
     });
     return result.data.value
