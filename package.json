@@ -1,12 +1,14 @@
 {
-  "name": "@javascriptdb/sdk",
-  "version": "1.0.0",
+  "name": "@jsdb/sdk",
+  "version": "0.0.2",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {},
   "author": "jpcapdevila",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
+    "axios": "^0.26.1",
     "events": "^3.3.0",
     "lodash-es": "^4.17.21"
   }

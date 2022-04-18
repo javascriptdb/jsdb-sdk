@@ -1,0 +1,1 @@
+Check the docs: https://javascriptdb.com/docs

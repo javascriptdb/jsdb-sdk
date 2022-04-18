@@ -1,54 +1,85 @@
-import {parseFiles, serializeFiles} from "./utils.js";
+import {parseData, serializeData} from "./utils.js";
 import EventEmitter from "events";
+import axios from 'axios';
+import _ from 'lodash-es';
+
+const jsdbAxios = axios.create({
+  baseURL: 'http://localhost:3001/',
+});
+
+jsdbAxios.defaults.headers.common['Content-Type'] = 'application/json';
+
+jsdbAxios.interceptors.request.use(async function (config) {
+  if (Array.isArray(config.data)) {
+    await config.data.map(async element => await serializeData(element));
+  } else if (_.isPlainObject(config.data)) {
+    await serializeData(config.data);
+  }
+  return config;
+}, function (error) {
+  return Promise.reject(error);
+});
+
+jsdbAxios.interceptors.response.use(async function (response) {
+  if (Array.isArray(response.data)) {
+    await response.data.map(async element => await parseData(element));
+  } else if (_.isPlainObject(response.data)) {
+    await parseData(response.data);
+  }
+  return response;
+}, function (error) {
+  return Promise.reject(error);
+});
+
+export function setServerUrl(baseUrl) {
+  jsdbAxios.defaults.baseURL = baseUrl;
+}
+
+export function setApiKey(apiKey) {
+  jsdbAxios.defaults.headers.common['X-API-Key'] = apiKey;
+}
 
 class Auth extends EventEmitter {
   token;
   userId;
 
-  constructor(backendUrl) {
+  constructor() {
     super()
     if (typeof process !== 'object') {
       this.token = localStorage.token;
       this.userId = localStorage.userId;
+      if (this.token) jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${localStorage.token}`;
     }
     this.on('newListener', (event, listener) => {
       if (event === 'tokenChanged') {
         listener(this.token);
       }
     })
-    this.backendUrl = backendUrl;
   }
 
-  isLoggedIn = () => !!this.token;
-
-  getDefaultHeaders = () => ({
-    'Authorization': this.token || '',
-    'Content-Type': 'application/json'
-  })
+  signOut = () => {
+    delete localStorage.token;
+    delete localStorage.userId;
+    delete jsdbAxios.defaults.headers.common['Authorization'];
+    this.emit('tokenChanged', undefined);
+  }
 
   signIn = async (credentials) => {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     credentials.password = decoder.decode(await crypto.subtle.digest('SHA-256', encoder.encode(credentials.password)));
-    const response = await fetch(`${this.backendUrl}/auth/sign-in`, {
-      method: 'POST',
-      mode: 'cors',
-      headers: {
-        ...this.getDefaultHeaders(),
-      },
-      body: JSON.stringify({credentials}) // body data type must match "Content-Type" header
-    });
-    if (response.status === 200) {
-      const jsonResponse = await response.json();
-      this.token = jsonResponse.token;
-      this.userId = jsonResponse.userId;
+    try {
+      const {data: {token, userId}} = await jsdbAxios.post('/auth/signin', {...credentials});
+      this.token = token;
+      this.userId = userId;
+      jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      this.emit('tokenChanged', this.token);
       if (typeof process !== 'object') {
         localStorage.token = this.token;
         localStorage.userId = this.userId;
       }
-      this.emit('tokenChanged', this.token);
       return true;
-    } else {
+    } catch (e) {
       throw new Error(`Error logging in, verify email and password`);
     }
   }
@@ -57,165 +88,278 @@ class Auth extends EventEmitter {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     credentials.password = decoder.decode(await crypto.subtle.digest('SHA-256', encoder.encode(credentials.password)));
-    const response = await fetch(`${this.backendUrl}/auth/sign-up`, {
-      method: 'POST',
-      mode: 'cors',
-      headers: {
-        ...this.getDefaultHeaders(),
-      },
-      body: JSON.stringify({credentials}) // body data type must match "Content-Type" header
-    });
-    if (response.status === 200) {
-      const jsonResponse = await response.json();
-      this.token = jsonResponse.token;
-      this.userId = jsonResponse.userId;
+    try {
+      const {data: {token, userId}} = await jsdbAxios.post('/auth/signup', {...credentials});
+      this.token = token;
+      this.userId = userId;
+      jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      this.emit('tokenChanged', this.token);
       if (typeof process !== 'object') {
         localStorage.token = this.token;
         localStorage.userId = this.userId;
       }
-      this.emit('tokenChanged', this.token);
       return true;
-    } else {
-      throw new Error(`Error creating account`);
+    } catch (e) {
+      throw new Error(`Error logging in, verify email and password`);
     }
   }
 }
 
-export default function index(_backendUrl) {
-  const backendUrl = _backendUrl;
-  const auth = new Auth(backendUrl);
+export const auth = new Auth();
 
-  const getDefaultHeaders = () => {
-    const headers = {
-      'Content-Type': 'application/json'
-    }
-    if (auth.token) {
-      headers['Authorization'] = auth.token;
-    }
-    return headers;
-  }
+function nestedProxyFactory(path) {
+  let resolve;
+  let reject;
 
-  const apiRequest = async (path, body) => {
-    const response = await fetch(`${backendUrl}${path}`, {
-      method: 'POST',
-      mode: 'cors',
-      headers: {
-        ...getDefaultHeaders(),
-      },
-      body: JSON.stringify(body) // body data type must match "Content-Type" header
-    });
-    if (response.headers.get("content-type").includes('json')) {
-      return response.json();
-    }
-  }
+  const proxyPromise = new Promise((_resolve, _reject) => {
+    resolve = _resolve;
+    reject = _reject;
+  });
 
-  const proxiedArray = (array, collection) => {
-
-    return new Proxy(array, {
-      async set(target, property, value, receiver) {
-        if (Number.isInteger(Number(property))) {
-          apiRequest(
-            '/db/set',
-            {collection, value}
-          )
-        }
-        return Reflect.set(...arguments);
+  return new Proxy(proxyPromise, {
+    get(target, property, receiver) {
+      if (property === 'then') {
+        const data = {collection: path[0], id: path[1], path: path.slice(2)};
+        jsdbAxios.post('/db/get', data).then(result => {
+          resolve(result.data.value);
+        }).catch(reject);
+        return target[property].bind(proxyPromise);
+      } else {
+        return nestedProxyFactory([...path, property]);
       }
-    });
-  }
-
-  class DatabaseArray extends Array {
-    collection;
-    proxy = new Proxy(this, {
-      set: function (target, property, value, receiver) {
-        target[property] = value;
-        return true;
-      },
-      get(target, property, receiver) {
-        const propertyHandler = {
-          filter: async (filterFunction) => {
-            return proxiedArray(await apiRequest(
-              '/db/filter',
-              {
-                collection: target.collection,
-                filterFunction: filterFunction
-                  .toString()
-                  .replaceAll('auth.userId', JSON.stringify(auth.userId))
-              }
-            ), target.collection)
-          },
-          forEach: async (callback) => {
-            const result = await apiRequest(
-              '/db/getAll',
-              {collection: target.collection}
-            );
-            return result.forEach(callback);
-          },
-          push: async (value) => {
-            const result = await apiRequest(
-              '/db/push',
-              {collection: target.collection, value}
-            );
-            return result.count;
-          }
-        }
-        return propertyHandler[property] || Reflect.get(target, property, receiver);;
-      }
-    });
-
-    constructor(collection, ...args) {
-      super(...args);
-      this.collection = collection;
-      return this.proxy;
-    }
-  }
-
-  class DatabaseMap extends Map {
-    collection;
-    proxy = new Proxy(this, {
-      async get(target, property, receiver) {
-        const response = await fetch(`${backendUrl}/db/get`, {
-          method: 'POST',
-          mode: 'cors',
-          headers: {
-            ...getDefaultHeaders(),
-          },
-          body: JSON.stringify([target.collection, property]) // body data type must match "Content-Type" header
-        });
-        const data = await response.json();
-        await parseFiles(data);
-        return data;
-      },
-      async set(target, property, value) {
-        await serializeFiles(value);
-        const response = await fetch(`${backendUrl}/db/set`, {
-          method: 'POST',
-          mode: 'cors',
-          headers: {
-            ...getDefaultHeaders(),
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify([target.collection, property, value]) // body data type must match "Content-Type" header
-        });
-        if (response.status === 200) {
-          target[property] = value;
+    },
+    set(target, property, value) {
+      const newPath = [...path, property]
+      const data = {collection: newPath[0], id: newPath[1], path: newPath.slice(2), value};
+      return (async () => {
+        try {
+          const result = await jsdbAxios.post('/db/set', data);
+          resolve(result.data);
           return true;
-        } else {
-          throw new Error(`Error setting ${target.collection} with ID ${property}`);
+        } catch (e) {
+          reject(e)
+          return false;
         }
-      }
-    });
-
-    constructor(collection) {
-      super();
-      this.collection = collection;
-      return this.proxy;
+      })();
+    },
+    deleteProperty(target, property) {
+      const newPath = [...path, property]
+      const data = {collection: newPath[0], id: newPath[1], path: newPath.slice(2)};
+      return (async () => {
+        try {
+          const result = await jsdbAxios.post('/db/delete', data);
+          resolve(result.data);
+          return true;
+        } catch (e) {
+          reject(e)
+          return false;
+        }
+      })();
     }
+  })
+}
+
+export class DatabaseMap extends Map {
+  collection;
+
+  proxy = new Proxy(this, {
+    set(target, property, value) {
+      const data = {collection: target.collection, id: property, value};
+      return (async () => {
+        try {
+          await jsdbAxios.post('/db/set', data);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      })();
+    },
+    get(target, property, receiver) {
+      return Reflect.get(target, property, receiver) || nestedProxyFactory([target.collection, property]);
+    },
+    deleteProperty(target, property) {
+      return (async () => {
+        const result = await jsdbAxios.post('/db/delete', {collection: target.collection, id: property});
+        return result.data.value;
+      })();
+    }
+  });
+
+  async clear() {
+    const result = await jsdbAxios.post('/db/clear', {collection: this.collection});
+    return result.data.value;
   }
 
-  return {
-    auth,
-    DatabaseArray,
-    DatabaseMap
+  async set(key, value) {
+    const result = await jsdbAxios.post('/db/set', {collection: this.collection, id: key, value});
+    return this;
+  }
+
+  async get(key) {
+    const result = await jsdbAxios.post('/db/get', {collection: this.collection, id: key});
+    return result.data;
+  }
+
+  async entries() {
+    const result = await jsdbAxios.post('/db/entries', {collection: this.collection});
+    const resultMap = new Map();
+    result.data.forEach(element => {
+      resultMap.set(element._id, element);
+    });
+    return resultMap.entries();
+  }
+
+  async values(){
+    const result = await jsdbAxios.post('/db/values', {collection: this.collection});
+    const resultMap = new Map();
+    result.data.forEach(element => {
+      resultMap.set(element._id, element);
+    });
+    return resultMap.values();
+  }
+
+  async forEach(callbackFn) {
+    const result = await jsdbAxios.post('/db/forEach', {collection: this.collection});
+    return result.data.forEach(callbackFn);
+  }
+
+  async has(key) {
+    const result = await jsdbAxios.post('/db/has', {collection: this.collection, id: key});
+    return result.data.value;
+  }
+
+  async delete(key) {
+    const result = await jsdbAxios.post('/db/delete', {collection: this.collection, id: key});
+    return result.data.value;
+  }
+
+  get size() {
+    return (async () => {
+      const result = await jsdbAxios.post('/db/size', {collection: this.collection});
+      return result.data.value;
+    })();
+  }
+
+  async keys() {
+    const result = await jsdbAxios.post('/db/keys', {collection: this.collection});
+    return result.data;
+  }
+
+  async* [Symbol.asyncIterator]() {
+    const result = await jsdbAxios.post('/db/getAll', {collection: this.collection});
+    yield* result.data
+  }
+
+  constructor(collection) {
+    super();
+    this.collection = collection;
+    return this.proxy;
   }
 }
+
+export class DatabaseArray extends Array {
+  collection;
+
+  async* [Symbol.asyncIterator]() {
+    const result = await jsdbAxios.post('/db/getAll', {collection: this.collection});
+    yield* result.data
+  }
+
+  get size() {
+    return (async () => {
+      const result = await jsdbAxios.post('/db/length', {collection: this.collection});
+      return result.data.value;
+    })();
+  }
+
+  get length() {
+    return (async () => {
+      const result = await jsdbAxios.post('/db/length', {collection: this.collection});
+      return result.data.value;
+    })();
+  }
+
+  async map(callbackFn, thisArg = {}) {
+    const result = await jsdbAxios.post('/db/map', {
+      collection: this.collection,
+      callbackFn: callbackFn.toString(),
+      thisArg
+    });
+    return result.data;
+  }
+
+  async filter(callbackFn, thisArg = {}) {
+    const result = await jsdbAxios.post('/db/filter', {
+      collection: this.collection,
+      callbackFn: callbackFn
+        .toString()
+        .replaceAll('auth.userId', JSON.stringify(auth.userId)),
+      thisArg
+    });
+    return result.data;
+  }
+
+  async find(callbackFn, thisArg = {}) {
+    const result = await jsdbAxios.post('/db/find', {
+      collection: this.collection,
+      callbackFn: callbackFn
+        .toString()
+        .replaceAll('auth.userId', JSON.stringify(auth.userId)),
+      thisArg
+    });
+    return result.data.value
+  }
+
+  async forEach(callback) {
+    const result = await jsdbAxios.post(
+      '/db/getAll',
+      {collection: this.collection}
+    );
+    return result.data.forEach(callback);
+  }
+
+  async push(value) {
+    const result = await jsdbAxios.post(
+      '/db/push',
+      {collection: this.collection, value}
+    );
+    return result.data.value;
+  }
+
+  proxy = new Proxy(this, {
+    set: function (target, property, value, receiver) {
+      const data = {collection: target.collection, id: property, value};
+      return (async () => {
+        try {
+          await jsdbAxios.post('/db/set', data);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      })();
+    },
+    get(target, property, receiver) {
+      if(property === 'length') property = 'size';
+      return Reflect.get(target, property, receiver) || nestedProxyFactory([target.collection, property]);
+    },
+    deleteProperty(target, property) {
+
+      return (async () => {
+        const result = await jsdbAxios.post('/db/delete', {collection: target.collection, id: property});
+        return result.data.value;
+      })();
+    }
+  });
+
+  constructor(collection, ...args) {
+    super(...args);
+    this.collection = collection;
+    return this.proxy;
+  }
+}
+
+export const functions = new Proxy({}, {
+  get(target, property, receiver) {
+    return async data => (await jsdbAxios.post(`/functions/${property}`, data)).data;
+  }
+})
