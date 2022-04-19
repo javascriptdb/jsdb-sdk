@@ -65,9 +65,6 @@ class Auth extends EventEmitter {
   }
 
   signIn = async (credentials) => {
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    credentials.password = decoder.decode(await crypto.subtle.digest('SHA-256', encoder.encode(credentials.password)));
     try {
       const {data: {token, userId}} = await jsdbAxios.post('/auth/signin', {...credentials});
       this.token = token;
@@ -85,9 +82,6 @@ class Auth extends EventEmitter {
   }
 
   createAccount = async (credentials) => {
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    credentials.password = decoder.decode(await crypto.subtle.digest('SHA-256', encoder.encode(credentials.password)));
     try {
       const {data: {token, userId}} = await jsdbAxios.post('/auth/signup', {...credentials});
       this.token = token;
