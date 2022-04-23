@@ -2,6 +2,7 @@ import {parseData, serializeData} from "./utils.js";
 import EventEmitter from "events";
 import axios from 'axios';
 import _ from 'lodash-es';
+import WebSocket from "isomorphic-ws"
 
 const jsdbAxios = axios.create({
   baseURL: 'http://localhost:3001/',
@@ -118,6 +119,31 @@ function nestedProxyFactory(path) {
           resolve(result.data.value);
         }).catch(reject);
         return target[property].bind(proxyPromise);
+      }
+      if (property === 'subscribe') {
+        const data = {collection: path[0], id: path[1], path: path.slice(2)};
+        console.log('subscribe', data);
+        return function subscribe(callbackFn) {
+          // TODO : open ws
+
+          const ws = new WebSocket('ws://localhost:3001/');
+
+          ws.onopen = function open() {
+            ws.send('Hi from client!!');
+          };
+
+          ws.onclose = function close() {
+            console.log('disconnected');
+          };
+
+          ws.onmessage = function incoming(event) {
+            console.log('onmessage',event.data);
+          };
+
+          return function unsubscribe() {
+            ws.terminate();
+          }
+        }
       } else {
         return nestedProxyFactory([...path, property]);
       }

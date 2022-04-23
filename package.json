@@ -10,6 +10,8 @@
   "dependencies": {
     "axios": "^0.26.1",
     "events": "^3.3.0",
-    "lodash-es": "^4.17.21"
+    "isomorphic-ws": "^4.0.1",
+    "lodash-es": "^4.17.21",
+    "ws": "^8.5.0"
   }
 }
