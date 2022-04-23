@@ -4,6 +4,28 @@ import axios from 'axios';
 import _ from 'lodash-es';
 import WebSocket from "isomorphic-ws"
 
+const realtimeListeners = new EventEmitter();
+const ws = new WebSocket('ws://localhost:3001/');
+
+ws.onopen = function open() {
+  console.log('ws open')
+};
+
+ws.onclose = function close() {
+  console.log('disconnected');
+};
+
+ws.onmessage = function incoming(event) {
+  try {
+    const data = JSON.parse(event.data);
+    if(data.operation === 'documentChange') {
+      realtimeListeners.emit(data.fullPath, data.value);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};
+
 const jsdbAxios = axios.create({
   baseURL: 'http://localhost:3001/',
 });
@@ -122,26 +144,16 @@ function nestedProxyFactory(path) {
       }
       if (property === 'subscribe') {
         const data = {collection: path[0], id: path[1], path: path.slice(2)};
-        console.log('subscribe', data);
         return function subscribe(callbackFn) {
-          // TODO : open ws
-
-          const ws = new WebSocket('ws://localhost:3001/');
-
-          ws.onopen = function open() {
-            ws.send('Hi from client!!');
-          };
-
-          ws.onclose = function close() {
-            console.log('disconnected');
-          };
-
-          ws.onmessage = function incoming(event) {
-            console.log('onmessage',event.data);
-          };
+          function documentChangeHandler(documentData) {
+            callbackFn(documentData);
+          }
+          const eventName = path.join('.');
+          realtimeListeners.on(eventName, documentChangeHandler)
+          ws.send(JSON.stringify({operation:'get',...data, authorization: jsdbAxios.defaults.headers.common['Authorization']}));
 
           return function unsubscribe() {
-            ws.terminate();
+            realtimeListeners.off(eventName, documentChangeHandler);
           }
         }
       } else {
