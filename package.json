@@ -1,6 +1,6 @@
 {
   "name": "@jsdb/sdk",
-  "version": "0.0.7",
+  "version": "0.0.9",
   "description": "",
   "main": "index.js",
   "type": "module",

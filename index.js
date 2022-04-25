@@ -5,6 +5,7 @@ import _ from 'lodash-es';
 import WebSocket from "isomorphic-ws";
 
 const realtimeListeners = new EventEmitter();
+const cachedRealtimeValues = new Map();
 const ws = new WebSocket('ws://localhost:3001/');
 const queue = [];
 ws.onopen = function open() {
@@ -21,6 +22,7 @@ ws.onmessage = function incoming(event) {
     try {
         const data = JSON.parse(event.data);
         if (data.operation === 'documentChange') {
+            cachedRealtimeValues.set(data.fullPath, data.value);
             realtimeListeners.emit(data.fullPath, data.value);
         }
     } catch (e) {
@@ -137,7 +139,9 @@ function nestedProxyFactory(path) {
 
     return new Proxy(proxyPromise, {
         get(target, property, receiver) {
-            if (property === 'then') {
+            if(property === '__fullPath') {
+                return path.join('.')
+            } else if (property === 'then') {
                 const data = {collection: path[0], id: path[1], path: path.slice(2)};
                 jsdbAxios.post('/db/get', data).then(result => {
                     resolve(result.data.value);
@@ -153,15 +157,21 @@ function nestedProxyFactory(path) {
 
                     const eventName = path.join('.');
                     realtimeListeners.on(eventName, documentChangeHandler)
-                    const wsData = JSON.stringify({
-                        operation: 'get', ...data,
-                        authorization: jsdbAxios.defaults.headers.common['Authorization']
-                    });
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(wsData);
+
+                    if(realtimeListeners.listenerCount(eventName) > 0 && cachedRealtimeValues.has(eventName)) {
+                        documentChangeHandler(cachedRealtimeValues.get(eventName))
                     } else {
-                        queue.push(wsData)
+                        const wsData = JSON.stringify({
+                            operation: 'get', ...data,
+                            authorization: jsdbAxios.defaults.headers.common['Authorization']
+                        });
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(wsData);
+                        } else {
+                            queue.push(wsData)
+                        }
                     }
+
 
                     return function unsubscribe() {
                         realtimeListeners.off(eventName, documentChangeHandler);
