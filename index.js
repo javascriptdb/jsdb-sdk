@@ -158,7 +158,7 @@ function nestedProxyFactory(path) {
                     const eventName = path.join('.');
                     realtimeListeners.on(eventName, documentChangeHandler)
 
-                    if(realtimeListeners.listenerCount(eventName) > 0 && cachedRealtimeValues.has(eventName)) {
+                    if(realtimeListeners.listenerCount(eventName) > 1 && cachedRealtimeValues.has(eventName)) {
                         documentChangeHandler(cachedRealtimeValues.get(eventName))
                     } else {
                         const wsData = JSON.stringify({
