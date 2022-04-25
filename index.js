@@ -4,35 +4,45 @@ import axios from 'axios';
 import _ from 'lodash-es';
 import WebSocket from "isomorphic-ws";
 
-const realtimeListeners = new EventEmitter();
-const cachedRealtimeValues = new Map();
-const ws = new WebSocket('ws://localhost:3001/');
-const queue = [];
-ws.onopen = function open() {
-    if (queue.length > 0) {
-        queue.forEach((wsData) => ws.send(wsData));
-    }
-};
-
-ws.onclose = function close() {
-    console.log('disconnected');
-};
-
-ws.onmessage = function incoming(event) {
-    try {
-        const data = JSON.parse(event.data);
-        if (data.operation === 'documentChange') {
-            cachedRealtimeValues.set(data.fullPath, data.value);
-            realtimeListeners.emit(data.fullPath, data.value);
-        }
-    } catch (e) {
-        console.error(e);
-    }
-};
 
 const jsdbAxios = axios.create({
     baseURL: 'http://localhost:3001/',
 });
+let ws;
+let queue = [];
+const realtimeListeners = new EventEmitter();
+const cachedRealtimeValues = new Map();
+
+function startWs() {
+    if (ws) {
+        ws.close();
+    }
+
+    ws = new WebSocket(jsdbAxios.defaults.baseURL.replaceAll('http://','ws://').replaceAll('https://','wss://'));
+
+    ws.onopen = function open() {
+        if (queue.length > 0) {
+            queue.forEach((wsData) => ws.send(wsData));
+            queue = [];
+        }
+    };
+
+    ws.onclose = function close() {
+        console.log('disconnected');
+    };
+
+    ws.onmessage = function incoming(event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.operation === 'documentChange') {
+                cachedRealtimeValues.set(data.fullPath, data.value);
+                realtimeListeners.emit(data.fullPath, data.value);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+}
 
 jsdbAxios.defaults.headers.common['Content-Type'] = 'application/json';
 
@@ -60,6 +70,7 @@ jsdbAxios.interceptors.response.use(async function (response) {
 
 export function setServerUrl(baseUrl) {
     jsdbAxios.defaults.baseURL = baseUrl;
+    startWs();
 }
 
 export function setApiKey(apiKey) {
@@ -139,7 +150,7 @@ function nestedProxyFactory(path) {
 
     return new Proxy(proxyPromise, {
         get(target, property, receiver) {
-            if(property === '__fullPath') {
+            if (property === '__fullPath') {
                 return path.join('.')
             } else if (property === 'then') {
                 const data = {collection: path[0], id: path[1], path: path.slice(2)};
@@ -158,7 +169,7 @@ function nestedProxyFactory(path) {
                     const eventName = path.join('.');
                     realtimeListeners.on(eventName, documentChangeHandler)
 
-                    if(realtimeListeners.listenerCount(eventName) > 1 && cachedRealtimeValues.has(eventName)) {
+                    if (realtimeListeners.listenerCount(eventName) > 1 && cachedRealtimeValues.has(eventName)) {
                         documentChangeHandler(cachedRealtimeValues.get(eventName))
                     } else {
                         const wsData = JSON.stringify({
