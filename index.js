@@ -176,7 +176,7 @@ function nestedProxyFactory(path) {
                             operation: 'get', ...data,
                             authorization: jsdbAxios.defaults.headers.common['Authorization']
                         });
-                        if (ws.readyState === WebSocket.OPEN) {
+                        if (ws?.readyState === WebSocket.OPEN) {
                             ws.send(wsData);
                         } else {
                             queue.push(wsData)
