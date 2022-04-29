@@ -5,43 +5,91 @@ import _ from 'lodash-es';
 import WebSocket from "isomorphic-ws";
 
 
-const jsdbAxios = axios.create({
-    baseURL: 'http://localhost:3001/',
-});
+const jsdbAxios = axios.create();
 let ws;
 let queue = [];
 const realtimeListeners = new EventEmitter();
 const cachedRealtimeValues = new Map();
 
 function startWs() {
-    if (ws) {
-        ws.close();
-    }
-
-    ws = new WebSocket(jsdbAxios.defaults.baseURL.replaceAll('http://','ws://').replaceAll('https://','wss://'));
-
-    ws.onopen = function open() {
-        if (queue.length > 0) {
-            queue.forEach((wsData) => ws.send(wsData));
-            queue = [];
+    try {
+        if (ws) {
+            ws.close();
         }
-    };
 
-    ws.onclose = function close() {
-        console.log('disconnected');
-    };
+        ws = new WebSocket(jsdbAxios.defaults.baseURL.replaceAll('http://', 'ws://').replaceAll('https://', 'wss://'));
 
-    ws.onmessage = function incoming(event) {
-        try {
-            const data = JSON.parse(event.data);
-            if (data.operation === 'documentChange') {
-                cachedRealtimeValues.set(data.fullPath, data.value);
-                realtimeListeners.emit(data.fullPath, data.value);
+        ws.onopen = function open() {
+            if (queue.length > 0) {
+                queue.forEach((wsData) => ws.send(wsData));
+                queue = [];
             }
-        } catch (e) {
-            console.error(e);
+        };
+
+        ws.onclose = function close() {
+            console.log('disconnected');
+        };
+
+        ws.onmessage = function incoming(event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.operation === 'get') {
+                    cachedRealtimeValues.set(data.fullPath, data.value);
+                    realtimeListeners.emit(data.fullPath, data.value);
+                } else if (data.operation === 'filter') {
+                    const key = `${data.collection}.filter(${data.callbackFn},${JSON.stringify(data.thisArg)})`;
+                    let value = cachedRealtimeValues.get(key) || [];
+                    if(data.content === 'reset') {
+                        value = data.value;
+                    } else if (data.content === 'add') {
+                        value.push(data.value);
+                    } else if(data.content === 'edit') {
+                        const editedIndex = value.findIndex(o => o._id === data.value._id);
+                        value[editedIndex] = data.value;
+                    } else if(data.content === 'delete') {
+                        const deletedIndex = value.findIndex(o => o._id === data.value._id);
+                        value.splice(deletedIndex, 1);
+                    } else if (data.content === 'drop') {
+                        value = []
+                    }
+                    cachedRealtimeValues.set(key, value);
+                    realtimeListeners.emit(key, value);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function subscriptionFactory(eventName, data, operation) {
+    return function subscribe(callbackFn) {
+        function documentChangeHandler(documentData) {
+            callbackFn(documentData);
         }
-    };
+
+        realtimeListeners.on(eventName, documentChangeHandler)
+
+        if (realtimeListeners.listenerCount(eventName) > 1 && cachedRealtimeValues.has(eventName)) {
+            documentChangeHandler(cachedRealtimeValues.get(eventName))
+        } else {
+            const wsData = JSON.stringify({
+                operation, ...data,
+                authorization: jsdbAxios.defaults.headers.common['Authorization']
+            });
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(wsData);
+            } else {
+                queue.push(wsData)
+            }
+        }
+
+        return function unsubscribe() {
+            realtimeListeners.off(eventName, documentChangeHandler);
+        }
+    }
 }
 
 jsdbAxios.defaults.headers.common['Content-Type'] = 'application/json';
@@ -69,8 +117,11 @@ jsdbAxios.interceptors.response.use(async function (response) {
 });
 
 export function setServerUrl(baseUrl) {
-    jsdbAxios.defaults.baseURL = baseUrl;
-    startWs();
+    const oldBaseUrl = jsdbAxios.defaults.baseURL;
+    if(oldBaseUrl !==baseUrl) {
+        jsdbAxios.defaults.baseURL = baseUrl;
+        startWs();
+    }
 }
 
 export function setApiKey(apiKey) {
@@ -160,34 +211,11 @@ function nestedProxyFactory(path) {
                 return target[property].bind(proxyPromise);
             }
             if (property === 'subscribe') {
-                const data = {collection: path[0], id: path[1], path: path.slice(2)};
-                return function subscribe(callbackFn) {
-                    function documentChangeHandler(documentData) {
-                        callbackFn(documentData);
-                    }
-
-                    const eventName = path.join('.');
-                    realtimeListeners.on(eventName, documentChangeHandler)
-
-                    if (realtimeListeners.listenerCount(eventName) > 1 && cachedRealtimeValues.has(eventName)) {
-                        documentChangeHandler(cachedRealtimeValues.get(eventName))
-                    } else {
-                        const wsData = JSON.stringify({
-                            operation: 'get', ...data,
-                            authorization: jsdbAxios.defaults.headers.common['Authorization']
-                        });
-                        if (ws?.readyState === WebSocket.OPEN) {
-                            ws.send(wsData);
-                        } else {
-                            queue.push(wsData)
-                        }
-                    }
-
-
-                    return function unsubscribe() {
-                        realtimeListeners.off(eventName, documentChangeHandler);
-                    }
-                }
+                return subscriptionFactory(path.join('.'), {
+                    collection: path[0],
+                    id: path[1],
+                    path: path.slice(2)
+                }, 'get');
             } else {
                 return nestedProxyFactory([...path, property]);
             }
@@ -221,6 +249,12 @@ function nestedProxyFactory(path) {
             })();
         }
     })
+}
+
+class OperationOption extends Promise {
+    constructor() {
+        super();
+    }
 }
 
 export class DatabaseMap extends Map {
@@ -352,14 +386,50 @@ export class DatabaseArray extends Array {
         return result.data;
     }
 
-    async filter(callbackFn, thisArg = {}) {
-        const result = await jsdbAxios.post('/db/filter', {
+    filter(callbackFn, thisArg = {}) {
+        const data = {
             collection: this.collection,
             callbackFn: callbackFn
                 .toString(),
             thisArg
-        });
-        return result.data;
+        }
+        return {
+            async then(successFn, errorFn) {
+                try {
+                    const result = await jsdbAxios.post('/db/filter', data);
+                    successFn(result.data);
+                } catch (e) {
+                    errorFn(e)
+                }
+            },
+            get subscribe() {
+                const eventName = `${data.collection}.filter(${callbackFn.toString()},${JSON.stringify(thisArg)})`;
+                return subscriptionFactory(eventName, data, 'filter');
+            }
+        };
+    }
+
+    slice(start=0, end ) {
+        const data = {
+            collection: this.collection,
+            callbackFn: callbackFn
+                .toString(),
+            thisArg
+        }
+        return {
+            async then(successFn, errorFn) {
+                try {
+                    const result = await jsdbAxios.post('/db/filter', data);
+                    successFn(result.data);
+                } catch (e) {
+                    errorFn(e)
+                }
+            },
+            get subscribe() {
+                const eventName = `${data.collection}.filter(${callbackFn.toString()},${JSON.stringify(thisArg)})`;
+                return subscriptionFactory(eventName, data, 'filter');
+            }
+        };
     }
 
     async find(callbackFn, thisArg = {}) {
@@ -425,3 +495,7 @@ export const functions = new Proxy({}, {
         return async data => (await jsdbAxios.post(`/functions/${property}`, data)).data;
     }
 })
+
+if(typeof window !== "undefined") {
+    setServerUrl(window.location.origin);
+}
