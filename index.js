@@ -295,7 +295,7 @@ export class DatabaseMap extends Map {
 
     async get(key) {
         const result = await jsdbAxios.post('/db/get', {collection: this.collection, id: key});
-        return result.data;
+        return result.data.value;
     }
 
     async entries() {
