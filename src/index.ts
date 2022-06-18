@@ -434,8 +434,7 @@ export class ChainableFilter {
 
     async then(successFn: fn, errorFn: fn) {
         try {
-            console.log(this.operations);
-            const result = await jsdbAxios.post('/db/filter2', {
+            const result = await jsdbAxios.post('/db/filter', {
                 collection: this.collection,
                 operations: this.operations
             });
@@ -479,31 +478,6 @@ export class DatabaseArray {
     }
 
     filter(callbackFn: fn, thisArg = {}) {
-        const data = {
-            collection: this.collection,
-            callbackFn: callbackFn
-                .toString(),
-            thisArg
-        }
-        // @ts-ignore
-        return {
-            async then(successFn: fn, errorFn: fn) {
-                try {
-                    const result = await jsdbAxios.post('/db/filter', data);
-                    successFn(result.data);
-                } catch (e) {
-                    errorFn(e)
-                }
-            },
-            // @ts-ignore
-            get subscribe() {
-                const eventName = `${data.collection}.filter(${callbackFn.toString()},${JSON.stringify(thisArg)})`;
-                return subscriptionFactory(eventName, data, 'filter');
-            }
-        };
-    }
-
-    filter2(callbackFn: fn, thisArg = {}) {
         const data = {
             callbackFn: callbackFn
                 .toString(),

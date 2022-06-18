@@ -60,5 +60,9 @@
     "isomorphic-ws": "^4.0.1",
     "lodash-es": "^4.17.21",
     "ws": "^8.5.0"
+  },
+  "description": "Install ```shell npm i @jsdb/sdk ```",
+  "directories": {
+    "test": "test"
   }
 }
