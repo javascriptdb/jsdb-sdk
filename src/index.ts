@@ -41,7 +41,7 @@ function startWs() {
                     cachedRealtimeValues.set(data.fullPath, data.value);
                     realtimeListeners.emit(data.fullPath, data.value);
                 } else if (data.operation === 'filter') {
-                    const key = `${data.collection}.filter(${data.callbackFn},${JSON.stringify(data.thisArg)})`;
+                    const key = data.eventName;
                     let value = cachedRealtimeValues.get(key) || [];
                     if (data.content === 'reset') {
                         value = data.value;
@@ -80,7 +80,7 @@ function subscriptionFactory(eventName: string, data: any, operation: string) {
             documentChangeHandler(cachedRealtimeValues.get(eventName))
         } else {
             const wsData = JSON.stringify({
-                operation, ...data,
+                operation, eventName, ...data,
                 authorization: jsdbAxios.defaults.headers.common['Authorization']
             });
             if (ws?.readyState === WebSocket.OPEN) {
@@ -92,6 +92,9 @@ function subscriptionFactory(eventName: string, data: any, operation: string) {
 
         return function unsubscribe() {
             realtimeListeners.off(eventName, documentChangeHandler);
+            if(realtimeListeners.listenerCount(eventName) === 0) {
+                // TODO : send message to unsubscribe from this specific event.
+            }
         }
     }
 }
@@ -447,8 +450,11 @@ export class ChainableFilter {
     // @ts-ignore
     get subscribe() {
         // TODO
-        // const eventName = `${data.collection}.filter(${callbackFn.toString()},${JSON.stringify(thisArg)})`;
-        // return subscriptionFactory(eventName, data, 'filter');
+        let eventName = this.collection + JSON.stringify(this.operations);
+        return subscriptionFactory(eventName, {
+            collection: this.collection,
+            operations: this.operations
+        }, 'filter');
     }
 }
 
