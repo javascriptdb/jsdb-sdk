@@ -194,7 +194,6 @@ class Auth extends EventEmitter {
     signInWithGoogle = async () => {
         try {
             const url = `${jsdbAxios.defaults.baseURL}/auth/oauth2/signin-with-google?url=${encodeURIComponent(window.location.href)}`
-            console.log('url: ', url)
             window.location.assign(url)
         } catch (e) {
             throw new Error(`Error logging in, verify email and password`);
