@@ -192,14 +192,22 @@ class Auth extends EventEmitter {
     }
 
     signInWithGoogle = async () => {
-        try {
+        return new Promise((resolve, reject) => {
+            let timeout = setTimeout(() => {
+                reject({message:'signInWithGoogle timeout exceeded'})
+            }, 2*60*1000)
+            let loginWindow: any;
             const url = `${jsdbAxios.defaults.baseURL}/auth/oauth2/signin-with-google?url=${encodeURIComponent(window.location.href)}`
-            window.location.assign(url)
-        } catch (e) {
-            throw new Error(`Error logging in, verify email and password`);
-        }
+            const uniqueWindowId = "authorizationGoogleJavascriptDatabase";
+            window.addEventListener("message", function (e) {
+                const token = e.data;
+                clearTimeout(timeout);
+                loginWindow.close();
+                resolve(token)
+            }, false);
+            loginWindow = window.open(url, uniqueWindowId)
+        })
     }
-
 }
 
 export const auth = new Auth();
