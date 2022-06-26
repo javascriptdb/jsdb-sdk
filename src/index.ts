@@ -134,6 +134,8 @@ export function setApiKey(apiKey: string) {
 
 async function singInWithProvider(providerName: string, callbackUrl: string): Promise<string> {
     return new Promise((resolve, reject) => {
+        const  width = 450, height = 550, left = (screen.width - width) / 2, top = (screen.height - height) / 2;
+        let params = `width=${width}, height=${height}, top=${top}, left=${left}, titlebar=no, location=yes`
         let timeout = setTimeout(() => {
             reject({message:`signInWith${providerName} timeout exceeded`})
         }, 2*60*1000)
@@ -147,7 +149,7 @@ async function singInWithProvider(providerName: string, callbackUrl: string): Pr
             loginWindow.close();
             resolve(token);
         }, false);
-        loginWindow = window.open(url.toString(), uniqueWindowId)
+        loginWindow = window.open(url.toString(), uniqueWindowId, params)
     })
 }
 class Auth extends EventEmitter {
