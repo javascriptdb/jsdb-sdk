@@ -214,6 +214,11 @@ class Auth extends EventEmitter {
         jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         this.emit('tokenChanged', this.token);
     }
+    signInWithGithub = async () => {
+        const token = await singInWithProvider('Github', 'auth/oauth2/signin-with-github')
+        jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        this.emit('tokenChanged', this.token);
+    }
 }
 
 export const auth = new Auth();
