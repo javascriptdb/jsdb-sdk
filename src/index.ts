@@ -199,11 +199,13 @@ class Auth extends EventEmitter {
             let loginWindow: any;
             const url = `${jsdbAxios.defaults.baseURL}/auth/oauth2/signin-with-google?url=${encodeURIComponent(window.location.href)}`
             const uniqueWindowId = "authorizationGoogleJavascriptDatabase";
-            window.addEventListener("message", function (e) {
+            window.addEventListener("message",  (e)=> {
                 const token = e.data;
                 clearTimeout(timeout);
                 loginWindow.close();
-                resolve(token)
+                jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                this.emit('tokenChanged', this.token);
+                resolve();
             }, false);
             loginWindow = window.open(url, uniqueWindowId)
         })
