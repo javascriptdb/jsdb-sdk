@@ -132,6 +132,24 @@ export function setApiKey(apiKey: string) {
     jsdbAxios.defaults.headers.common['X-API-Key'] = apiKey;
 }
 
+async function singInWithProvider(providerName: string, callbackUrl: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        let timeout = setTimeout(() => {
+            reject({message:`signInWith${providerName} timeout exceeded`})
+        }, 2*60*1000)
+        let loginWindow: any;
+        const url = new URL(callbackUrl, jsdbAxios.defaults.baseURL);
+        url.searchParams.set('url', window.location.href)
+        const uniqueWindowId = `authorization${providerName}JavascriptDatabase`;
+        window.addEventListener("message",  (e)=> {
+            const token = e.data;
+            clearTimeout(timeout);
+            loginWindow.close();
+            resolve(token);
+        }, false);
+        loginWindow = window.open(url.toString(), uniqueWindowId)
+    })
+}
 class Auth extends EventEmitter {
     token: undefined | string;
     userId: undefined | string;
@@ -192,23 +210,9 @@ class Auth extends EventEmitter {
     }
 
     signInWithGoogle = async () => {
-        return new Promise((resolve, reject) => {
-            let timeout = setTimeout(() => {
-                reject({message:'signInWithGoogle timeout exceeded'})
-            }, 2*60*1000)
-            let loginWindow: any;
-            const url = `${jsdbAxios.defaults.baseURL}/auth/oauth2/signin-with-google?url=${encodeURIComponent(window.location.href)}`
-            const uniqueWindowId = "authorizationGoogleJavascriptDatabase";
-            window.addEventListener("message",  (e)=> {
-                const token = e.data;
-                clearTimeout(timeout);
-                loginWindow.close();
-                jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-                this.emit('tokenChanged', this.token);
-                resolve();
-            }, false);
-            loginWindow = window.open(url, uniqueWindowId)
-        })
+        const token = await singInWithProvider('Google', 'auth/oauth2/signin-with-google')
+        jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        this.emit('tokenChanged', this.token);
     }
 }
 
