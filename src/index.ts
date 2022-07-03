@@ -132,25 +132,36 @@ export function setApiKey(apiKey: string) {
     jsdbAxios.defaults.headers.common['X-API-Key'] = apiKey;
 }
 
-async function singInWithProvider(providerName: string, callbackUrl: string): Promise<string> {
+async function singInWithProvider(providerName: string, callbackUrl: string): Promise<{ token: string, user: any}> {
     return new Promise((resolve, reject) => {
         const  width = 450, height = 550, left = (screen.width - width) / 2, top = (screen.height - height) / 2;
         let params = `width=${width}, height=${height}, top=${top}, left=${left}, titlebar=no, location=yes`
         let timeout = setTimeout(() => {
             reject({message:`signInWith${providerName} timeout exceeded`})
-        }, 2*60*1000)
+        }, 10*60*1000)
         let loginWindow: any;
         const url = new URL(callbackUrl, jsdbAxios.defaults.baseURL);
         url.searchParams.set('url', window.location.href)
         const uniqueWindowId = `authorization${providerName}JavascriptDatabase`;
-        window.addEventListener("message",  (e)=> {
-            const token = e.data;
+        const handleMessage = (e: MessageEvent)=> {
+            const {token, user} = e.data;
             clearTimeout(timeout);
             loginWindow.close();
-            resolve(token);
-        }, false);
+            window.removeEventListener('message', handleMessage)
+            resolve({token, user});
+        }
+        window.addEventListener("message", handleMessage , false);
         loginWindow = window.open(url.toString(), uniqueWindowId, params)
     })
+}
+async function linkWithProvider(providerName: string, callbackUrl: string, that: any) {
+    if(!that.userId) throw 'User must be logged';
+    const {token} = await singInWithProvider(providerName, callbackUrl)
+    const oldToken = that.token;
+    const newToken = token;
+    jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    that.emit('tokenChanged', that.token);
+    await jsdbAxios.post('/auth/link-providers', {oldToken, newToken});
 }
 class Auth extends EventEmitter {
     token: undefined | string;
@@ -212,15 +223,22 @@ class Auth extends EventEmitter {
     }
 
     signInWithGoogle = async () => {
-        const token = await singInWithProvider('Google', 'auth/oauth2/signin-with-google')
+        const {token, user} = await singInWithProvider('Google', 'auth/oauth2/signin-with-google')
+        this.userId = user.id;
+        this.token = token;
         jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         this.emit('tokenChanged', this.token);
     }
     signInWithGithub = async () => {
-        const token = await singInWithProvider('Github', 'auth/oauth2/signin-with-github')
+        const {token, user} =  await singInWithProvider('Github', 'auth/oauth2/signin-with-github')
+        this.userId = user.id;
+        this.token = token;
         jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         this.emit('tokenChanged', this.token);
     }
+
+    linkWithGoogle = async () => linkWithProvider('Google', 'auth/oauth2/signin-with-google', this)
+    linkWithGithub = async () => linkWithProvider('Github', 'auth/oauth2/signin-with-github', this)
 }
 
 export const auth = new Auth();
