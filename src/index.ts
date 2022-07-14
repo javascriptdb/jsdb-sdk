@@ -4,10 +4,11 @@ import axios from 'axios';
 import _ from 'lodash-es';
 import WebSocket from "isomorphic-ws";
 
-type document = { _id: string, [key: string]: any }
-type fn = <T>(v: T) => T
+type document = { id: string, [key: string]: any }
+type fn = (v: any) => any
 
-export function initApp(config?: { serverUrl: string, apiKey: string }) {
+export function initApp(config: { serverUrl?: string, apiKey?: string, connector: 'HTTP' | 'LOCAL' | 'WS', opHandlers?: any } = {connector: 'HTTP'}) {
+    config = {...{connector: 'HTTP'}, ...config}
     const jsdbAxios = axios.create({
         baseURL: ''
     });
@@ -25,10 +26,12 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
             ws = new WebSocket(jsdbAxios.defaults.baseURL?.replace('http://', 'ws://').replace('https://', 'wss://'));
 
             ws.onopen = function open() {
-                if (queue.length > 0) {
-                    queue.forEach((wsData) => ws.send(wsData));
-                    queue = [];
-                }
+                setTimeout(() => {
+                    if (queue.length > 0) {
+                        queue.forEach((wsData) => ws.send(wsData));
+                        queue = [];
+                    }
+                },100)
             };
 
             ws.onclose = function close() {
@@ -59,6 +62,8 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
                         }
                         cachedRealtimeValues.set(key, value);
                         realtimeListeners.emit(key, value);
+                    } else if (data.operation === 'push') {
+                        realtimeListeners.emit(data.eventName, data.value);
                     }
                 } catch (e) {
                     console.error(e);
@@ -87,7 +92,7 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
                 if (ws?.readyState === WebSocket.OPEN) {
                     ws.send(wsData);
                 } else {
-                    queue.push(wsData)
+                    queue.push(wsData);
                 }
             }
 
@@ -198,6 +203,204 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
 
     const auth = new Auth();
 
+    const connectors = {
+        HTTP: {
+            size(data: { collection: string }): Promise<number> {
+                return (async () => {
+                    const result = await jsdbAxios.post('/db/length', {...data});
+                    return result.data.value;
+                })();
+            },
+            async map(data: { collection: string, callbackFn: fn | string, thisArg?: any }): Promise<Array<any>> {
+                const result = await jsdbAxios.post('/db/map', data);
+                return result.data;
+            },
+            async filter(data: { collection: string, operations: Array<any> }): Promise<any> {
+                const result = await jsdbAxios.post('/db/filter', data);
+                return result.data.value;
+            },
+            async slice(data: { collection: string, start: number, end?: number }): Promise<Array<document>> {
+                const result = await jsdbAxios.post('/db/slice', data);
+                return result.data;
+            },
+            async find(data: { collection: string, callbackFn: string, thisArg: any }): Promise<document> {
+                const result = await jsdbAxios.post('/db/find', data);
+                return result.data.value
+            },
+            async forEach(data: { collection: string }, callback: fn): Promise<unknown> {
+                const result = await jsdbAxios.post('/db/forEach', data);
+                return result.data.forEach(callback);
+            },
+            async push(data: { collection: string, value: any }): Promise<string> {
+                const result = await jsdbAxios.post(
+                    '/db/push',
+                    data
+                );
+                return result.data.value;
+            },
+            delete(data: { collection: string, id: string | number | symbol, path?: Array<string> }): Promise<boolean> {
+                return (async () => {
+                    const result = await jsdbAxios.post('/db/delete', data);
+                    return result.data.value;
+                })();
+            },
+            set(data: { collection: string, id: string | number | symbol, value: any, path?: Array<any> }): Promise<boolean> {
+                return (async () => {
+                    try {
+                        await jsdbAxios.post('/db/set', data);
+                        return true;
+                    } catch (e) {
+                        return false;
+                    }
+                })();
+            },
+            async clear(data: { collection: string }): Promise<number> {
+                const result = await jsdbAxios.post('/db/clear', data);
+                return result.data.value;
+            },
+            async get(data: { collection: string, id: string | number | symbol, path?: Array<any> }): Promise<document> {
+                const result = await jsdbAxios.post('/db/get', data);
+                return result.data.value;
+            },
+            async has(data: { collection: string, id: string | number | symbol }): Promise<boolean> {
+                const result = await jsdbAxios.post('/db/has', data);
+                return result.data.value;
+            },
+            async keys(data: { collection: string }): Promise<Array<string>> {
+                const result = await jsdbAxios.post('/db/keys', data);
+                return result.data;
+            },
+            async getAll(data: { collection: string }): Promise<Array<document>> {
+                const result = await jsdbAxios.post('/db/getAll', data);
+                return result.data;
+            }
+        },
+        WS: {
+            size(data: { collection: string }): Promise<number> {
+                return (async () => {
+                    const result = await jsdbAxios.post('/db/length', {...data});
+                    return result.data.value;
+                })();
+            },
+            async map(data: { collection: string, callbackFn: fn | string, thisArg?: any }): Promise<Array<any>> {
+                const result = await jsdbAxios.post('/db/map', data);
+                return result.data;
+            },
+            async filter(data: { collection: string, operations: Array<any> }): Promise<any> {
+                const result = await jsdbAxios.post('/db/filter', data);
+                return result.data.value;
+            },
+            async slice(data: { collection: string, start: number, end?: number }): Promise<Array<document>> {
+                const result = await jsdbAxios.post('/db/slice', data);
+                return result.data;
+            },
+            async find(data: { collection: string, callbackFn: string, thisArg: any }): Promise<document> {
+                const result = await jsdbAxios.post('/db/find', data);
+                return result.data.value
+            },
+            async forEach(data: { collection: string }, callback: fn): Promise<unknown> {
+                const result = await jsdbAxios.post('/db/forEach', data);
+                return result.data.forEach(callback);
+            },
+            async push(data: { collection: string, value: any }): Promise<string> {
+                return new Promise((resolve) => {
+                    // TODO : handle reject
+                    const unsubscribe = subscriptionFactory((Math.random()*10000).toString(), data, 'push')(id => {
+                        resolve(id);
+                        unsubscribe();
+                    });
+                })
+            },
+            delete(data: { collection: string, id: string | number | symbol, path?: Array<string> }): Promise<boolean> {
+                return (async () => {
+                    const result = await jsdbAxios.post('/db/delete', data);
+                    return result.data.value;
+                })();
+            },
+            set(data: { collection: string, id: string | number | symbol, value: any, path?: Array<any> }): Promise<boolean> {
+                return (async () => {
+                    try {
+                        await jsdbAxios.post('/db/set', data);
+                        return true;
+                    } catch (e) {
+                        return false;
+                    }
+                })();
+            },
+            async clear(data: { collection: string }): Promise<number> {
+                const result = await jsdbAxios.post('/db/clear', data);
+                return result.data.value;
+            },
+            async get(data: { collection: string, id: string | number | symbol, path?: Array<any> }): Promise<document> {
+                const result = await jsdbAxios.post('/db/get', data);
+                return result.data.value;
+            },
+            async has(data: { collection: string, id: string | number | symbol }): Promise<boolean> {
+                const result = await jsdbAxios.post('/db/has', data);
+                return result.data.value;
+            },
+            async keys(data: { collection: string }): Promise<Array<string>> {
+                const result = await jsdbAxios.post('/db/keys', data);
+                return result.data;
+            },
+            async getAll(data: { collection: string }): Promise<Array<document>> {
+                const result = await jsdbAxios.post('/db/getAll', data);
+                return result.data;
+            }
+        },
+        LOCAL: {
+            size(data: { collection: string }): Promise<number> {
+                return (async () => {
+                    return config.opHandlers.size({collection: data.collection});
+                })();
+            },
+            async map(data: { collection: string, callbackFn: string, thisArg?: any }): Promise<Array<any>> {
+                return config.opHandlers.map(data);
+            },
+            async filter(data: { collection: string, operations: Array<any> }): Promise<any> {
+                return config.opHandlers.filter(data);
+            },
+            async slice(data: { collection: string, start: number, end?: number }): Promise<Array<document>> {
+                return config.opHandlers.slice(data);
+            },
+            async find(data: { collection: string, callbackFn: string, thisArg: any }): Promise<document> {
+                return config.opHandlers.find(data);
+            },
+            async forEach(data: { collection: string }, callback: fn): Promise<unknown> {
+                return config.opHandlers.getAll(data).forEach(callback);
+            },
+            async push(data: { collection: string, value: any }): Promise<string> {
+                const result = config.opHandlers.set(data);
+                return result.insertedId;
+            },
+            delete(data: { collection: string, id: string | number | symbol, path?: Array<string> }): Promise<boolean> {
+                return (async () => {
+                    return config.opHandlers.delete(data);
+                })();
+            },
+            set(data: { collection: string, id: string | number | symbol, value: any, path?: Array<any> }): Promise<boolean> {
+                return (async () => {
+                    return config.opHandlers.set(data);
+                })();
+            },
+            async clear(data: { collection: string }): Promise<number> {
+                return config.opHandlers.clear(data);
+            },
+            async get(data: { collection: string, id: string | number | symbol, path?: Array<any> }): Promise<document> {
+                return config.opHandlers.get(data);
+            },
+            async has(data: { collection: string, id: string | number | symbol }): Promise<boolean> {
+                return config.opHandlers.has(data);
+            },
+            async keys(data: { collection: string }): Promise<Array<string>> {
+                return config.opHandlers.keys(data);
+            },
+            async getAll(data: { collection: string }): Promise<Array<document>> {
+                return config.opHandlers.getAll(data);
+            }
+        },
+    }
+
     // @ts-ignore
     function nestedProxyFactory(path: string[]) {
         let resolve: { (arg0: any): void; (value?: unknown): void; };
@@ -214,8 +417,8 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
                     return path.join('.')
                 } else if (property === 'then') {
                     const data = {collection: path[0], id: path[1], path: path.slice(2)};
-                    jsdbAxios.post('/db/get', data).then(result => {
-                        resolve(result.data.value);
+                    connectors[config.connector].get(data).then(result => {
+                        resolve(result);
                     }).catch(reject);
                     return target[property].bind(proxyPromise);
                 }
@@ -232,32 +435,14 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
             // @ts-ignore
             set(target, property, value) {
                 const newPath = [...path, property]
-                const data = {collection: newPath[0], id: newPath[1], path: newPath.slice(2), value};
-                return (async () => {
-                    try {
-                        const result = await jsdbAxios.post('/db/set', data);
-                        resolve(result.data);
-                        return true;
-                    } catch (e) {
-                        reject(e)
-                        return false;
-                    }
-                })();
+                const data = {collection: newPath[0].toString(), id: newPath[1], path: newPath.slice(2), value};
+                return connectors[config.connector].set(data);
             },
             // @ts-ignore
             deleteProperty(target, property) {
                 const newPath = [...path, property]
-                const data = {collection: newPath[0], id: newPath[1], path: newPath.slice(2)};
-                return (async () => {
-                    try {
-                        const result = await jsdbAxios.post('/db/delete', data);
-                        resolve(result.data);
-                        return true;
-                    } catch (e) {
-                        reject(e)
-                        return false;
-                    }
-                })();
+                const data = {collection: newPath[0].toString(), id: newPath[1], path: <Array<string>>newPath.slice(2)};
+                return connectors[config.connector].delete(data);
             }
         })
     }
@@ -269,92 +454,70 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
         proxy = new Proxy(this, {
             // @ts-ignore
             set(target, property, value) {
-                const data = {collection: target.collection, id: property, value};
-                return (async () => {
-                    try {
-                        await jsdbAxios.post('/db/set', data);
-                        return true;
-                    } catch (e) {
-                        return false;
-                    }
-                })();
+                return connectors[config.connector].set({collection: target.collection, id: property, value})
             },
             get(target, property, receiver) {
                 return Reflect.get(target, property, receiver) || nestedProxyFactory([target.collection, property.toString()]);
             },
             // @ts-ignore
             deleteProperty(target, property) {
-                return (async () => {
-                    const result = await jsdbAxios.post('/db/delete', {collection: target.collection, id: property});
-                    return result.data.value;
-                })();
+                return connectors[config.connector].delete({collection: target.collection, id: property})
             }
         });
 
-        async clear() {
-            const result = await jsdbAxios.post('/db/clear', {collection: this.collection});
-            return result.data.value;
+        async clear(): Promise<number> {
+            return connectors[config.connector].clear({collection: this.collection});
         }
 
-        async set(key: string, value: any) {
-            await jsdbAxios.post('/db/set', {collection: this.collection, id: key, value});
+        async set(key: string, value: any): Promise<DatabaseMap> {
+            await connectors[config.connector].set({collection: this.collection, id: key, value})
             return this;
         }
 
-        async get(key: string) {
-            const result = await jsdbAxios.post('/db/get', {collection: this.collection, id: key});
-            return <document>result.data.value;
+        async get(key: string): Promise<document> {
+            return connectors[config.connector].get({collection: this.collection, id: key})
         }
 
         async entries() {
-            const result = await jsdbAxios.post('/db/entries', {collection: this.collection});
             const resultMap = new Map();
-            result.data.forEach((element: document) => {
-                resultMap.set(element._id, element);
-            });
+            await connectors[config.connector].forEach({collection: this.collection}, (element: document) => {
+                resultMap.set(element.id, element);
+            })
             return resultMap.entries();
         }
 
         async values() {
-            const result = await jsdbAxios.post('/db/values', {collection: this.collection});
             const resultMap = new Map();
-            result.data.forEach((element: document) => {
-                resultMap.set(element._id, element);
-            });
+            await connectors[config.connector].forEach({collection: this.collection}, (element: document) => {
+                resultMap.set(element.id, element);
+            })
             return resultMap.values();
         }
 
-        async forEach(callbackFn: fn) {
-            const result = await jsdbAxios.post('/db/forEach', {collection: this.collection});
-            return result.data.forEach(callbackFn);
+        async forEach(callback: fn): Promise<unknown> {
+            return connectors[config.connector].forEach({collection: this.collection}, callback)
         }
 
-        async has(key: string) {
-            const result = await jsdbAxios.post('/db/has', {collection: this.collection, id: key});
-            return result.data.value;
+        async has(id: string): Promise<boolean> {
+            return connectors[config.connector].has({collection: this.collection, id});
         }
 
-        async delete(key: string) {
-            const result = await jsdbAxios.post('/db/delete', {collection: this.collection, id: key});
-            return result.data.value;
+        async delete(id: string): Promise<boolean> {
+            return connectors[config.connector].delete({collection: this.collection, id});
         }
 
         // @ts-ignore
         get size() {
-            return (async () => {
-                const result = await jsdbAxios.post('/db/size', {collection: this.collection});
-                return result.data.value;
-            })();
+            return connectors[config.connector].size({collection: this.collection})
         }
 
-        async keys() {
-            const result = await jsdbAxios.post('/db/keys', {collection: this.collection});
-            return result.data;
+        async keys(): Promise<Array<string>> {
+            return connectors[config.connector].keys({collection: this.collection})
         }
 
         async* [Symbol.asyncIterator]() {
-            const result = await jsdbAxios.post('/db/getAll', {collection: this.collection});
-            yield* result.data
+            const result = await connectors[config.connector].getAll({collection: this.collection})
+            yield* result;
         }
 
         constructor(collection: string) {
@@ -435,14 +598,13 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
             return this;
         }
 
-
-        async then(successFn: fn, errorFn: fn) {
+        async then(successFn: fn, errorFn: fn): Promise<any> {
             try {
-                const result = await jsdbAxios.post('/db/filter', {
+                const result = await connectors[config.connector].filter({
                     collection: this.collection,
                     operations: this.operations
                 });
-                successFn(result.data.value);
+                successFn(result);
             } catch (e) {
                 errorFn(e)
             }
@@ -450,7 +612,6 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
 
         // @ts-ignore
         get subscribe() {
-            // TODO
             let eventName = this.collection + JSON.stringify(this.operations);
             return subscriptionFactory(eventName, {
                 collection: this.collection,
@@ -463,25 +624,21 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
         collection: string;
 
         async* [Symbol.asyncIterator]() {
-            const result = await jsdbAxios.post('/db/getAll', {collection: this.collection});
-            yield* result.data
+            const result = await connectors[config.connector].getAll({collection: this.collection})
+            yield* result;
         }
 
         // @ts-ignore
-        get size() {
-            return (async () => {
-                const result = await jsdbAxios.post('/db/length', {collection: this.collection});
-                return result.data.value;
-            })();
+        get size(): Promise<number> {
+            return connectors[config.connector].size({collection: this.collection});
         }
 
-        async map(callbackFn: fn, thisArg = {}) {
-            const result = await jsdbAxios.post('/db/map', {
+        async map(callbackFn: fn, thisArg = {}): Promise<Array<any>> {
+            return connectors[config.connector].map({
                 collection: this.collection,
                 callbackFn: callbackFn.toString(),
                 thisArg
-            });
-            return result.data;
+            })
         }
 
         filter(callbackFn: fn, thisArg = {}) {
@@ -493,53 +650,35 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
             return new ChainableFilter(this.collection, [{type: 'filter', data}]);
         }
 
-        async slice(start = 0, end?: number) {
-            const result = await jsdbAxios.post('/db/slice', {
+        async slice(start = 0, end?: number): Promise<Array<document>> {
+            return connectors[config.connector].slice({
                 collection: this.collection,
                 start,
                 end
             });
-            return result.data;
         }
 
-        async find(callbackFn: fn, thisArg = {}) {
-            const result = await jsdbAxios.post('/db/find', {
+        async find(callbackFn: fn, thisArg = {}): Promise<document> {
+            return connectors[config.connector].find({
                 collection: this.collection,
                 callbackFn: callbackFn
                     .toString(),
                 thisArg
             });
-            return result.data.value
         }
 
-        async forEach(callback: fn) {
-            const result = await jsdbAxios.post(
-                '/db/getAll',
-                {collection: this.collection}
-            );
-            return result.data.forEach(callback);
+        async forEach(callback: fn): Promise<unknown> {
+            return connectors[config.connector].forEach({collection: this.collection}, callback);
         }
 
-        async push(value: any) {
-            const result = await jsdbAxios.post(
-                '/db/push',
-                {collection: this.collection, value}
-            );
-            return result.data.value;
+        async push(value: any): Promise<string> {
+            return connectors[config.connector].push({collection: this.collection, value});
         }
 
         proxy = new Proxy(this, {
             // @ts-ignore
             set: function (target, property, value) {
-                const data = {collection: target.collection, id: property, value};
-                return (async () => {
-                    try {
-                        await jsdbAxios.post('/db/set', data);
-                        return true;
-                    } catch (e) {
-                        return false;
-                    }
-                })();
+                return connectors[config.connector].set({collection: target.collection, id: property, value})
             },
             get(target, property, receiver) {
                 if (property === 'length') property = 'size';
@@ -547,10 +686,7 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
             },
             // @ts-ignore
             deleteProperty(target, property) {
-                return (async () => {
-                    const result = await jsdbAxios.post('/db/delete', {collection: target.collection, id: property});
-                    return result.data.value;
-                })();
+                return connectors[config.connector].delete({collection: target.collection, id: property})
             }
         });
 
@@ -566,18 +702,18 @@ export function initApp(config?: { serverUrl: string, apiKey: string }) {
         }
     })
 
-    if (typeof window !== "undefined") {
+    if (config.serverUrl || (typeof window !== "undefined" && config.connector !== 'LOCAL')) {
         setServerUrl(config?.serverUrl || window.location.origin);
     }
 
-    if(config?.apiKey) {
+    if (config?.apiKey) {
         setApiKey(config?.apiKey);
     }
 
     return {functions, DatabaseArray, ChainableFilter, DatabaseMap, auth, setApiKey, setServerUrl}
 }
 
-const defaultApp = initApp();
+const defaultApp = initApp({connector: 'HTTP'});
 export const functions = defaultApp.functions;
 export const DatabaseArray = defaultApp.DatabaseArray;
 export const ChainableFilter = defaultApp.ChainableFilter;
