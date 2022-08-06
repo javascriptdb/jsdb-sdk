@@ -132,7 +132,11 @@ export function setApiKey(apiKey: string) {
     jsdbAxios.defaults.headers.common['X-API-Key'] = apiKey;
 }
 
-async function singInWithProvider(providerName: string, callbackUrl: string): Promise<{ token: string, user: any}> {
+async function singInWithProvider(providerName: string, callbackUrl: string): Promise<{ token: {
+    id: string,
+    userId: string,
+    createdAt: Date
+    }, user: any}> {
     return new Promise((resolve, reject) => {
         const  width = 450, height = 550, left = (screen.width - width) / 2, top = (screen.height - height) / 2;
         let params = `width=${width}, height=${height}, top=${top}, left=${left}, titlebar=no, location=yes`
@@ -158,7 +162,7 @@ async function linkWithProvider(providerName: string, callbackUrl: string, that:
     if(!that.userId) throw 'User must be logged';
     const {token} = await singInWithProvider(providerName, callbackUrl)
     const oldToken = that.token;
-    const newToken = token;
+    const newToken = token.id;
     jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
     that.emit('tokenChanged', that.token);
     await jsdbAxios.post('/auth/link-providers', {oldToken, newToken});
@@ -191,9 +195,9 @@ class Auth extends EventEmitter {
     signIn = async (credentials: { email: string, password: string }) => {
         try {
             const {data: {token, userId}} = await jsdbAxios.post('/auth/signin', {...credentials});
-            this.token = token;
+            this.token = token.id;
             this.userId = userId;
-            jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
             this.emit('tokenChanged', this.token);
             if (typeof process !== 'object') {
                 localStorage.token = this.token;
@@ -207,10 +211,10 @@ class Auth extends EventEmitter {
 
     createAccount = async (credentials: { email: string, password: string }) => {
         try {
-            const {data: {token, userId}} = await jsdbAxios.post('/auth/signup', {...credentials});
-            this.token = token;
-            this.userId = userId;
-            jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            const {data: {token}} = await jsdbAxios.post('/auth/signup', {...credentials});
+            this.token = token.id;
+            this.userId = token.userId;
+            jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
             this.emit('tokenChanged', this.token);
             if (typeof process !== 'object') {
                 localStorage.token = this.token;
@@ -225,20 +229,28 @@ class Auth extends EventEmitter {
     signInWithGoogle = async () => {
         const {token, user} = await singInWithProvider('Google', 'auth/oauth2/signin-with-google')
         this.userId = user.id;
-        this.token = token;
-        jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        this.token = token.id;
+        jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
         this.emit('tokenChanged', this.token);
     }
     signInWithGithub = async () => {
         const {token, user} =  await singInWithProvider('Github', 'auth/oauth2/signin-with-github')
         this.userId = user.id;
-        this.token = token;
-        jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        this.token = token.id;
+        jsdbAxios.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
         this.emit('tokenChanged', this.token);
     }
 
     linkWithGoogle = async () => linkWithProvider('Google', 'auth/oauth2/signin-with-google', this)
     linkWithGithub = async () => linkWithProvider('Github', 'auth/oauth2/signin-with-github', this)
+    revokeTokens = async(userId: string) => {
+        const {data: {revoked}} = await jsdbAxios.post('/auth/revoke-tokens', {userId});
+        console.log(revoked)
+    }
+    verifyEmail = async(userId: string) => {
+        const resp = await jsdbAxios.post('/auth/verify-email', {userId});
+        console.log(resp)
+    }
 }
 
 export const auth = new Auth();
