@@ -447,84 +447,6 @@ export function initApp(config: { serverUrl?: string, apiKey?: string, connector
         })
     }
 
-    const DatabaseMap = class DatabaseMap {
-        collection: string;
-
-
-        proxy = new Proxy(this, {
-            // @ts-ignore
-            set(target, property, value) {
-                return connectors[config.connector].set({collection: target.collection, id: property, value})
-            },
-            get(target, property, receiver) {
-                return Reflect.get(target, property, receiver) || nestedProxyFactory([target.collection, property.toString()]);
-            },
-            // @ts-ignore
-            deleteProperty(target, property) {
-                return connectors[config.connector].delete({collection: target.collection, id: property})
-            }
-        });
-
-        async clear(): Promise<number> {
-            return connectors[config.connector].clear({collection: this.collection});
-        }
-
-        async set(key: string, value: any): Promise<DatabaseMap> {
-            await connectors[config.connector].set({collection: this.collection, id: key, value})
-            return this;
-        }
-
-        async get(key: string): Promise<document> {
-            return connectors[config.connector].get({collection: this.collection, id: key})
-        }
-
-        async entries() {
-            const resultMap = new Map();
-            await connectors[config.connector].forEach({collection: this.collection}, (element: document) => {
-                resultMap.set(element.id, element);
-            })
-            return resultMap.entries();
-        }
-
-        async values() {
-            const resultMap = new Map();
-            await connectors[config.connector].forEach({collection: this.collection}, (element: document) => {
-                resultMap.set(element.id, element);
-            })
-            return resultMap.values();
-        }
-
-        async forEach(callback: fn): Promise<unknown> {
-            return connectors[config.connector].forEach({collection: this.collection}, callback)
-        }
-
-        async has(id: string): Promise<boolean> {
-            return connectors[config.connector].has({collection: this.collection, id});
-        }
-
-        async delete(id: string): Promise<boolean> {
-            return connectors[config.connector].delete({collection: this.collection, id});
-        }
-
-        // @ts-ignore
-        get size() {
-            return connectors[config.connector].size({collection: this.collection})
-        }
-
-        async keys(): Promise<Array<string>> {
-            return connectors[config.connector].keys({collection: this.collection})
-        }
-
-        async* [Symbol.asyncIterator]() {
-            const result = await connectors[config.connector].getAll({collection: this.collection})
-            yield* result;
-        }
-
-        constructor(collection: string) {
-            this.collection = collection;
-            return this.proxy;
-        }
-    }
 
     type operation = {
         type: string,
@@ -620,7 +542,7 @@ export function initApp(config: { serverUrl?: string, apiKey?: string, connector
         }
     }
 
-    const DatabaseArray = class DatabaseArray {
+    const DatabaseCollection = class DatabaseCollection {
         collection: string;
 
         async* [Symbol.asyncIterator]() {
@@ -675,6 +597,52 @@ export function initApp(config: { serverUrl?: string, apiKey?: string, connector
             return connectors[config.connector].push({collection: this.collection, value});
         }
 
+        async clear(): Promise<number> {
+            return connectors[config.connector].clear({collection: this.collection});
+        }
+
+        async set(key: string, value: any): Promise<DatabaseCollection> {
+            await connectors[config.connector].set({collection: this.collection, id: key, value})
+            return this;
+        }
+
+        async get(key: string): Promise<document> {
+            return connectors[config.connector].get({collection: this.collection, id: key})
+        }
+
+        async entries() {
+            const resultMap = new Map();
+            await connectors[config.connector].forEach({collection: this.collection}, (element: document) => {
+                resultMap.set(element.id, element);
+            })
+            return resultMap.entries();
+        }
+
+        async values() {
+            const resultMap = new Map();
+            await connectors[config.connector].forEach({collection: this.collection}, (element: document) => {
+                resultMap.set(element.id, element);
+            })
+            return resultMap.values();
+        }
+
+        async has(id: string): Promise<boolean> {
+            return connectors[config.connector].has({collection: this.collection, id});
+        }
+
+        async delete(id: string): Promise<boolean> {
+            return connectors[config.connector].delete({collection: this.collection, id});
+        }
+
+        async keys(): Promise<Array<string>> {
+            return connectors[config.connector].keys({collection: this.collection})
+        }
+
+        // @ts-ignore
+        get size() {
+            return connectors[config.connector].size({collection: this.collection})
+        }
+
         proxy = new Proxy(this, {
             // @ts-ignore
             set: function (target, property, value) {
@@ -696,6 +664,12 @@ export function initApp(config: { serverUrl?: string, apiKey?: string, connector
         }
     }
 
+    const db = new Proxy({}, {
+        get(_target, property) {
+            return new DatabaseCollection(property.toString())
+        }
+    })
+
     const functions = new Proxy({}, {
         get(_target, property) {
             return async (data: any) => (await jsdbAxios.post(`/functions/${property.toString()}`, data)).data;
@@ -710,14 +684,13 @@ export function initApp(config: { serverUrl?: string, apiKey?: string, connector
         setApiKey(config?.apiKey);
     }
 
-    return {functions, DatabaseArray, ChainableFilter, DatabaseMap, auth, setApiKey, setServerUrl}
+    return {functions, db, ChainableFilter, auth, setApiKey, setServerUrl}
 }
 
 const defaultApp = initApp({connector: 'HTTP'});
 export const functions = defaultApp.functions;
-export const DatabaseArray = defaultApp.DatabaseArray;
+export const db = defaultApp.db;
 export const ChainableFilter = defaultApp.ChainableFilter;
-export const DatabaseMap = defaultApp.DatabaseMap;
 export const auth = defaultApp.auth;
 export const setApiKey = defaultApp.setApiKey;
 export const setServerUrl = defaultApp.setServerUrl;
