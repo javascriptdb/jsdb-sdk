@@ -1,5 +1,5 @@
 {
-  "version": "0.0.39",
+  "version": "0.0.41",
   "license": "MIT",
   "main": "dist/sdk.esm.js",
   "browser": "dist/sdk.esm.js",
@@ -10,7 +10,7 @@
     "src"
   ],
   "engines": {
-    "node": ">=10"
+    "node": ">=18"
   },
   "scripts": {
     "start": "tsdx watch --format esm",
@@ -55,10 +55,7 @@
     "typescript": "^3.9.10"
   },
   "dependencies": {
-    "axios": "^0.26.1",
-    "events": "^3.3.0",
     "isomorphic-ws": "^4.0.1",
-    "lodash-es": "^4.17.21",
     "ws": "^8.5.0"
   },
   "description": "Install ```shell npm i @jsdb/sdk ```",
