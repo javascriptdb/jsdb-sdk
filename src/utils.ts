@@ -61,7 +61,7 @@ export class CustomStore {
     subscribe(callback: (value: any) => any) {
         if(typeof callback !== 'function') throw new Error('Subscribe parameter must be a function.')
         this.subscriptions.add(callback);
-        callback(this.value);
+        setTimeout(() => callback(this.value));
         return () => this.subscriptions.delete(callback);
     }
 

@@ -277,7 +277,9 @@ export function initApp(config: { serverUrl?: string, apiKey?: string, connector
                     let timeout = setTimeout(() => {
                         reject(new Error('Push timed out.'));
                     },5000);
-                    const unsubscribe = subscriptionFactory((Math.random()*10000).toString(), data, 'push')(id => {
+                    debugger;
+                    // TODO : Change Random - Event name needs to be a globally unique id.
+                    const unsubscribe = subscriptionFactory(Math.random().toString(), data, 'push')(id => {
                         resolve(id);
                         unsubscribe();
                         clearTimeout(timeout);
