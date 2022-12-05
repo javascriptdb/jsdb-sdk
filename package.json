@@ -1,5 +1,5 @@
 {
-  "version": "0.0.41",
+  "version": "0.0.42",
   "license": "MIT",
   "main": "dist/sdk.esm.js",
   "browser": "dist/sdk.esm.js",
@@ -17,7 +17,7 @@
     "build": "tsdx build --format esm",
     "test": "tsdx test",
     "lint": "tsdx lint",
-    "prepare": "tsdx build --format esm",
+    "prepare": "tsdx build",
     "size": "size-limit",
     "analyze": "size-limit --why"
   },

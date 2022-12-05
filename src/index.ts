@@ -661,11 +661,3 @@ export function initApp(config: { serverUrl?: string, apiKey?: string, connector
 
     return {functions, db, ChainableFilter, auth, setApiKey, setServerUrl}
 }
-
-const defaultApp = initApp({connector: 'HTTP'});
-export const functions = defaultApp.functions;
-export const db = defaultApp.db;
-export const ChainableFilter = defaultApp.ChainableFilter;
-export const auth = defaultApp.auth;
-export const setApiKey = defaultApp.setApiKey;
-export const setServerUrl = defaultApp.setServerUrl;
